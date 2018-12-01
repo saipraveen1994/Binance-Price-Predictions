@@ -1,0 +1,242 @@
+---
+title: "Project - 1"
+author: "Saipraveen Vabbilisetty(sxv165130) Manohar Katam(mxk164930)"
+date: "October 20, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Reading Token Data
+
+```{r}
+# Loading all packages
+# KernSmooth to find out number of bins
+library(KernSmooth)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+
+# For Date conversions
+library(anytime)
+
+# For plotting correlations
+library(ggpubr)
+```
+
+```{r}
+setwd("C:\\Users\\makatam\\Desktop\\STATS\\Ethereum token graphs")
+input_data <- read.delim('networkbnbTX.txt',sep = ' ',header = FALSE)
+names(input_data)<- c("From_Node","To_Node","Unix_Time","Transaction_Amount")
+input_df<- as.data.frame(input_data,na.rm=TRUE)
+head(input_df)
+```
+
+# Dropping From Node and To Node as we don't need agrregate them
+```{r}
+drops <- c("From_Node","To_Node")
+input_df<- input_df[ , !(names(input_df) %in% drops)]
+```
+
+# Convert unix time stamp to date
+```{r}
+input_df$Unix_Time <- as.Date(as.POSIXct(as.numeric(input_df$Unix_Time), origin = '1970-01-01', tz = 'UTC'))
+```
+
+# Load Price Data
+```{r}
+setwd("C:\\Users\\makatam\\Desktop\\STATS\\tokenPrices")
+price_data <- read.delim('binance.txt',sep = '\t',header = TRUE)
+names(price_data)<- c("Date","Open","High","Low","Close","Volume","MarketCap")
+price_df <- as.data.frame(price_data, na.rm=TRUE)
+```
+
+# Read Date string (ex: Oct 10, 2018) to Date
+```{r}
+price_df$Date <- as.Date(price_df$Date, "%B %d,%Y")
+```
+
+# Normalizing token amounts
+```{r}
+multiplier<-10**18
+input_df$Transaction_Amount<-input_df$Transaction_Amount/multiplier
+head(input_df)
+```
+
+# Dividing the transactions into three layers
+```{r}
+threshold1 = 10**0
+threshold2 = 10**3
+threshold3 = 10**8
+```
+
+# Layer 1: 0.817*total number of transactions
+```{r}
+filter1<-filter(input_df,input_df$Transaction_Amount < threshold1)
+summary(filter1)
+```
+```{r}
+nrow(filter1)
+```
+
+# Plotting the histogram to understand the distribution 
+```{r}
+h1 <- dpih(as.numeric(as.POSIXct(filter1$Unix_Time, format="%Y-%m-%d")))
+bins <- seq(min(as.numeric(as.POSIXct(filter1$Unix_Time, format="%Y-%m-%d"))),
+            max(as.numeric(as.POSIXct(filter1$Unix_Time, format="%Y-%m-%d")))+h1, 
+            by=h1)
+h1_plot<-hist(as.numeric(as.POSIXct(filter1$Unix_Time, format="%Y-%m-%d")),
+              xlim = c(min(as.numeric(as.POSIXct(filter1$Unix_Time, format="%Y-%m-%d"))),
+                       max(as.numeric(as.POSIXct(filter1$Unix_Time, format="%Y-%m-%d")))),
+              breaks=50, xlab = "Unix Timestamp", main = paste("Histogram of Frequency vs Unix Timestamp"))
+```
+
+# Group by date and count number of transactions present in layer 1
+```{r}
+filter1_df = as.data.frame(plyr::count(anydate(filter1$Unix_Time)))
+names(filter1_df)<-c('Date','Count1')
+head(filter1_df)
+```
+
+# Joining the price data with token data on Date
+```{r}
+combined_df1 <- inner_join(filter1_df,price_df,by=c('Date'))
+head(combined_df1)
+```
+
+# Calculating correlation
+```{r}
+ggscatter(combined_df1, x = "Count1", y = "Close", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "No. of Transactions in Layer 1", ylab = "Closing price")
+res <- cor.test(combined_df1$Count1, combined_df1$Close, 
+                    method = "pearson")
+```
+
+# Layer 2: 0.817*total number of transactions < n < 0.96*total number of transactions
+```{r}
+filter2<-filter(input_df,(input_df$Transaction_Amount > threshold1 & input_df$Transaction_Amount < threshold2))
+summary(filter2)
+nrow(filter2)
+```
+```{r}
+h2 <- dpih(as.numeric(as.POSIXct(filter2$Unix_Time, format="%Y-%m-%d")))
+bins <- seq(min(as.numeric(as.POSIXct(filter2$Unix_Time, format="%Y-%m-%d"))),
+            max(as.numeric(as.POSIXct(filter2$Unix_Time, format="%Y-%m-%d")))+h2, 
+            by=h2)
+h2_plot<-hist(as.numeric(as.POSIXct(filter2$Unix_Time, format="%Y-%m-%d")),
+              xlim = c(min(as.numeric(as.POSIXct(filter2$Unix_Time, format="%Y-%m-%d"))),
+                       max(as.numeric(as.POSIXct(filter2$Unix_Time, format="%Y-%m-%d")))),
+              breaks=30, xlab = "Unix Timestamp", main = paste("Histogram of Frequency vs Unix Timestamp"))
+```
+
+# Group by date and count number of transactions present in layer 2
+```{r}
+filter2_df = as.data.frame(plyr::count(anydate(filter2$Unix_Time)))
+names(filter2_df)<-c('Date','Count2')
+```
+
+# Joining the price data with token data on Date
+```{r}
+combined_df2 <- inner_join(filter2_df,price_df,by=c('Date'))
+head(combined_df2)
+```
+
+# Calculating correlation
+```{r}
+ggscatter(combined_df2, x = "Count2", y = "Close", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "No. of Transactions in Layer 2", ylab = "Closing price")
+res2 <- cor.test(combined_df2$Count2, combined_df2$Close, 
+                    method = "pearson")
+```
+
+
+# Layer 3: > 0.96* number of transactions
+```{r}
+filter3<-filter(input_df,(input_df$Transaction_Amount > threshold2 & input_df$Transaction_Amount < threshold3))
+summary(filter3)
+nrow(filter3)
+```
+
+```{r}
+h3 <- dpih(as.numeric(as.POSIXct(filter3$Unix_Time, format="%Y-%m-%d")))
+bins <- seq(min(as.numeric(as.POSIXct(filter3$Unix_Time, format="%Y-%m-%d"))),
+            max(as.numeric(as.POSIXct(filter3$Unix_Time, format="%Y-%m-%d")))+h3, 
+            by=h3)
+h3_plot<-hist(as.numeric(as.POSIXct(filter3$Unix_Time, format="%Y-%m-%d")),
+              xlim = c(min(as.numeric(as.POSIXct(filter3$Unix_Time, format="%Y-%m-%d"))),
+                       max(as.numeric(as.POSIXct(filter3$Unix_Time, format="%Y-%m-%d")))),
+              breaks=30, xlab = "Unix Timestamp", main = paste("Histogram of Frequency vs Unix Timestamp"))
+```
+
+```{r}
+filter3_df = as.data.frame(plyr::count(anydate(filter3$Unix_Time)))
+names(filter3_df)<-c('Date','Count3')
+```
+
+# Joining the price data with token data on Date
+```{r}
+combined_df3 <- inner_join(filter3_df,price_df,by=c('Date'))
+head(combined_df3)
+```
+
+# Calculating correlation
+```{r}
+ggscatter(combined_df3, x = "Count3", y = "Close", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "No. of Transactions in Layer 3", ylab = "Closing price")
+res3 <- cor.test(combined_df3$Count3, combined_df3$Close, 
+                    method = "pearson")
+```
+
+# Groupby date and calculate the Median token amount
+```{r}
+input_median_df<- aggregate(input_df$Transaction_Amount,by=list(input_df$Unix_Time),median)
+names(input_median_df)<-c("Date","Median")
+input_median_df1<-as.data.frame(input_median_df)
+```
+
+```{r}
+combined_df_median<-inner_join(input_median_df1,price_df,by=c('Date'))
+ggscatter(combined_df_median, x = "Median", y = "Close", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Median of token amount", ylab = "Closing price")
+res_Median<-cor.test(combined_df_median$Median,combined_df_median$High,method="pearson")
+```
+
+# Groupby date and calculate the standard deviation token amount
+```{r}
+input_sd_df<- aggregate(input_df$Transaction_Amount,by=list(input_df$Unix_Time),sd)
+names(input_sd_df)<-c("Date","sd")
+input_sd_df1<-as.data.frame(input_sd_df)
+```
+
+```{r}
+combined_df_sd<-inner_join(input_sd_df1,price_df,by=c('Date'))
+ggscatter(combined_df_sd, x = "sd", y = "Close", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "sd of token amount", ylab = "Closing price")
+res_Median<-cor.test(combined_df_sd$sd,combined_df_sd$High,method="pearson")
+```
+
+# CONCLUSION
+The most significant features which contributes to prediction of closing token price from our experiments are 
+
+1.The number of Layer 2 transaction (1 to 1000 binance coins) with a positive correlation of 0.58. 
+
+2.The Median of token amounts for a given day with a negative correlation of -0.29
+
+3.The Standard Deviation of token amounts for a given day with a negative correlation of -0.23
+
+
+
+```
+
