@@ -1,6 +1,6 @@
 ---
 title: "Project2"
-author: "Saipraveen Vabbilisetty"
+author: "Saipraveen Vabbilisetty(sxv165130), Manohar Katam(mxk164930)"
 date: "November 25, 2018"
 output: html_document
 ---
@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
 
 
 ```{r}
@@ -22,76 +23,104 @@ library(psych)
 library(corrplot)
 library(PerformanceAnalytics)
 library(ggplot2)
+```
 
+```{r}
 setwd("C:\\Users\\praveen94\\Desktop\\Stats_Project\\Ethereum token graphs")
 input_data <- read.delim('networkbnbTX.txt',sep = ' ',header = FALSE)
 names(input_data)<- c("From_Node","To_Node","Unix_Time","Transaction_Amount")
 input_df<- as.data.frame(input_data,na.rm=TRUE)
 head(input_df)
+```
+
+```{r}
 drops <- c("From_Node","To_Node")
 input_df<- input_df[ , !(names(input_df) %in% drops)]
 input_df$Unix_Time <- as.Date(as.POSIXct(as.numeric(input_df$Unix_Time), origin = '1970-01-01', tz = 'UTC'))
+multiplier<-10**18
+input_df$Transaction_Amount<-input_df$Transaction_Amount/multiplier
+head(input_df)
+```
+
+```{r}
 price_data <- read.delim('binance.txt',sep = '\t',header = FALSE)
 names(price_data)<- c("Date","Open","High","Low","Close","Volume","MarketCap")
 price_df <- as.data.frame(price_data, na.rm=TRUE)
 price_df$Date <- as.Date(price_df$Date, "%B %d,%Y")
-multiplier<-10**18
-input_df$Transaction_Amount<-input_df$Transaction_Amount/multiplier
-head(input_df)
+head(price_df)
+```
 
+```{r}
 filter1_df = as.data.frame(plyr::count(anydate(input_df$Unix_Time)))
 names(filter1_df)<-c('Date','Num_Transactions')
 head(filter1_df)
+```
 
+```{r}
 combined_df1 <- inner_join(filter1_df,price_df,by=c('Date'))
-head(combined_df1)
 combined_df1$Lag1 <- lag(combined_df1$Close, 1)
 combined_df1$Lag2<- lag(combined_df1$Close, 2)
+combined_df1<-na.omit(combined_df1)
+head(combined_df1)
 
+```
 
-
-
+```{r}
 correlation_df<-data.frame(combined_df1$Num_Transactions,combined_df1$Open,combined_df1$High,combined_df1$Low,combined_df1$Lag1,combined_df1$Lag2,combined_df1$Close)
-str(correlation_df)
 correlation_df<-na.omit(correlation_df)
+head(correlation_df)
+```
 
+```{r}
 pairs.panels(correlation_df[1:7], hist.col="white", scale=TRUE)
 chart.Correlation(correlation_df[1:7])
 x <- cor(correlation_df[1:7],use = "na.or.complete")
 corrplot(x, type="upper", order="hclust")
+```
 
-combined_df1<-na.omit(combined_df1)
+```{r}
 training_features<-data.frame(combined_df1$Open,combined_df1$High,combined_df1$Lag1,combined_df1$Lag2,combined_df1$Close,combined_df1$Date)
-
 colnames(training_features)<-c('Open','High','Lag1','Lag2','Close','Date')
 head(training_features)
-#autocorrelation plot
+```
+
+```{r}
 acf <- acf(ts(training_features$Close), plot = FALSE, na.action = na.pass)
 acf.plot <- with(acf, data.frame(lag, acf))
 ggplot(data = acf.plot, mapping = aes(x = lag, y = acf)) +
   geom_hline(aes(yintercept = 0)) +
   geom_segment(mapping = aes(xend = lag, yend = 0))
+```
+
+```{r}
 training_data<- training_features[1:round(nrow(training_features)*0.8),]
 testing_data<- training_features[round(nrow(training_features)*0.8):nrow(training_features),]
+```
+
+```{r}
 fit <- lm(Close~Lag1+Lag2+Open, data=training_data)
 summary(fit)
+```
+
+```{r}
 actual_values<-testing_data$Close
 testing_data$predictions<-predict(object = fit,newdata=testing_data)
-# Function that returns Root Mean Squared Error
+
+```
+
+```{r}
 rmse <- function(error)
 {
     sqrt(mean(error^2))
 }
 error <- actual_values - testing_data$predictions
 rmse(error)
+```
 
+```{r}
 ggplot() + 
   geom_line(data = testing_data, aes(x = Date , y = Close, color = "red")) +
   geom_line(data = testing_data, aes(x = Date, y = predictions, color = "blue")) +
   xlab("Date") + ylab("Closing Price") + ggtitle("Binance Price Prediction") +
   scale_colour_discrete(name = "Legend", labels = c("Actual", "Predicted"))
-
-
 ```
-
-
