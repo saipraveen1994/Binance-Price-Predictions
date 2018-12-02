@@ -9,8 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
-
+# Loading all the libraries needed
 ```{r}
 library(xts)
 library(zoo)
@@ -25,6 +24,7 @@ library(PerformanceAnalytics)
 library(ggplot2)
 ```
 
+# Reading Token Data and transforming it into Data frame
 ```{r}
 setwd("C:\\Users\\praveen94\\Desktop\\Stats_Project\\Ethereum token graphs")
 input_data <- read.delim('networkbnbTX.txt',sep = ' ',header = FALSE)
@@ -33,6 +33,8 @@ input_df<- as.data.frame(input_data,na.rm=TRUE)
 head(input_df)
 ```
 
+# Dropping From Node and To Node as they are something like IDs and does not contribute to prediction
+# Removing outliers if any
 ```{r}
 drops <- c("From_Node","To_Node")
 input_df<- input_df[ , !(names(input_df) %in% drops)]
@@ -41,7 +43,7 @@ multiplier<-10**18
 input_df$Transaction_Amount<-input_df$Transaction_Amount/multiplier
 head(input_df)
 ```
-
+# Reading Price Data
 ```{r}
 price_data <- read.delim('binance.txt',sep = '\t',header = FALSE)
 names(price_data)<- c("Date","Open","High","Low","Close","Volume","MarketCap")
@@ -49,13 +51,13 @@ price_df <- as.data.frame(price_data, na.rm=TRUE)
 price_df$Date <- as.Date(price_df$Date, "%B %d,%Y")
 head(price_df)
 ```
-
+# Extracting Number of Transactions feature
 ```{r}
 filter1_df = as.data.frame(plyr::count(anydate(input_df$Unix_Time)))
 names(filter1_df)<-c('Date','Num_Transactions')
 head(filter1_df)
 ```
-
+# Combining token and price data and Adding Lag Features
 ```{r}
 combined_df1 <- inner_join(filter1_df,price_df,by=c('Date'))
 combined_df1$Lag1 <- lag(combined_df1$Close, 1)
@@ -64,7 +66,7 @@ combined_df1<-na.omit(combined_df1)
 head(combined_df1)
 
 ```
-
+# Correlation plot
 ```{r}
 correlation_df<-data.frame(combined_df1$Num_Transactions,combined_df1$Open,combined_df1$High,combined_df1$Low,combined_df1$Lag1,combined_df1$Lag2,combined_df1$Close)
 correlation_df<-na.omit(correlation_df)
@@ -77,13 +79,13 @@ chart.Correlation(correlation_df[1:7])
 x <- cor(correlation_df[1:7],use = "na.or.complete")
 corrplot(x, type="upper", order="hclust")
 ```
-
+# Training features with complete data
 ```{r}
 training_features<-data.frame(combined_df1$Open,combined_df1$High,combined_df1$Lag1,combined_df1$Lag2,combined_df1$Close,combined_df1$Date)
 colnames(training_features)<-c('Open','High','Lag1','Lag2','Close','Date')
 head(training_features)
 ```
-
+# Auto correlation plot to see correlation between Lag Feature with Closing price
 ```{r}
 acf <- acf(ts(training_features$Close), plot = FALSE, na.action = na.pass)
 acf.plot <- with(acf, data.frame(lag, acf))
@@ -91,23 +93,23 @@ ggplot(data = acf.plot, mapping = aes(x = lag, y = acf)) +
   geom_hline(aes(yintercept = 0)) +
   geom_segment(mapping = aes(xend = lag, yend = 0))
 ```
-
+# Separating out Training and Test Data (80 and 20 percents)
 ```{r}
 training_data<- training_features[1:round(nrow(training_features)*0.8),]
 testing_data<- training_features[round(nrow(training_features)*0.8):nrow(training_features),]
 ```
-
+# Fitting the multiple linear regression model on training data
 ```{r}
 fit <- lm(Close~Lag1+Lag2+Open, data=training_data)
 summary(fit)
 ```
-
+# Applying the training model to test data to get the predictions
 ```{r}
 actual_values<-testing_data$Close
 testing_data$predictions<-predict(object = fit,newdata=testing_data)
 
 ```
-
+# Calculating RMSE error of Actual and Predicted Closing Price
 ```{r}
 rmse <- function(error)
 {
@@ -116,7 +118,7 @@ rmse <- function(error)
 error <- actual_values - testing_data$predictions
 rmse(error)
 ```
-
+# Actual vs Predicted plot
 ```{r}
 ggplot() + 
   geom_line(data = testing_data, aes(x = Date , y = Close, color = "red")) +
